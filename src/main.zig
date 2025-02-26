@@ -5,7 +5,7 @@ const decode = @import("decode.zig");
 pub fn buildInstructionLookup(alloc: std.mem.Allocator) !std.AutoHashMap(u8, decode.Instruction) {
     var instructions_lookup = std.AutoHashMap(u8, decode.Instruction).init(alloc);
 
-    try instructions_lookup.put(0b10001001, decode.Instruction{
+    try instructions_lookup.put(0b100010, decode.Instruction{
         .opcode = decode.OpCodeType.mov,
         .size = 2,
         .asm_text = "mov",
@@ -45,15 +45,17 @@ pub fn Disassemble(memory_buffer: []u8, memory_size: u64, instructions_lookup: s
     var memory_buffer_index: u32 = 0;
 
     while (memory_buffer_index < memory_size) {
-        const opcode = memory_buffer[memory_buffer_index];
+        const byte1 = memory_buffer[memory_buffer_index];
         const byte2 = memory_buffer[memory_buffer_index + 1];
+
+        const opcode = (byte1 & decode.OpCodeBitmask) >> 2;
 
         const instruction = instructions_lookup.get(opcode);
         if (instruction) |inst| {
             const register_mode = (byte2 & decode.ModeBitmask) >> 6;
 
-            const direction_bit = (opcode & decode.DirectionBitBitmask) >> 1;
-            const word_bit = opcode & decode.WordByteBitBitmask;
+            const direction_bit = (byte1 & decode.DirectionBitBitmask) >> 1;
+            const word_bit = byte1 & decode.WordByteBitBitmask;
 
             const reg_bits = (byte2 & decode.RegBitmask) >> 3;
             const rm_bits = (byte2 & decode.RMBitmask);
