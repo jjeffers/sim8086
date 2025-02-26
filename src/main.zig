@@ -30,7 +30,7 @@ pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     const stderr = std.io.getStdErr().writer();
 
-    try stdout.print("bits 16\n", .{});
+    try stdout.print("bits 16\n\n", .{});
 
     const instructions_lookup = try buildInstructionLookup(alloc);
 
@@ -50,15 +50,15 @@ pub fn Disassemble(memory_buffer: []u8, memory_size: u64, instructions_lookup: s
 
         const instruction = instructions_lookup.get(opcode);
         if (instruction) |inst| {
-            const register_mode = byte2 & decode.ModeBitmask >> 6;
+            const register_mode = (byte2 & decode.ModeBitmask) >> 6;
 
-            const direction_bit = opcode & decode.DirectionBitBitmask >> 1;
+            const direction_bit = (opcode & decode.DirectionBitBitmask) >> 1;
             const word_bit = opcode & decode.WordByteBitBitmask;
 
-            const reg_bits = byte2 & decode.RegBitmask >> 3;
-            const rm_bits = byte2 & decode.RMBitmask;
+            const reg_bits = (byte2 & decode.RegBitmask) >> 3;
+            const rm_bits = (byte2 & decode.RMBitmask);
 
-            const operands = decode.getOperands(register_mode, direction_bit, word_bit, reg_bits, rm_bits);
+            const operands = decode.getOperands(@enumFromInt(register_mode), @enumFromInt(direction_bit), @enumFromInt(word_bit), reg_bits, rm_bits);
 
             try printInstruction(inst.asm_text, @tagName(operands.destination), @tagName(operands.source), stdout);
 
