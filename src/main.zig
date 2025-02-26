@@ -1,85 +1,12 @@
 const std = @import("std");
 const lib = @import("sim8086_lib");
+const decode = @import("decode.zig");
 
-const OpCodeType = enum {
-    None,
-    mov,
-};
+pub fn buildInstructionLookup(alloc: std.mem.Allocator) !std.AutoHashMap(u8, decode.Instruction) {
+    var instructions_lookup = std.AutoHashMap(u8, decode.Instruction).init(alloc);
 
-const WordByteBitBitmask = 0b01;
-const WordByteBit = enum {
-    Byte,
-    Word,
-};
-
-const DirectionBitBitmask = 0b10;
-
-const DirectionBit = enum {
-    RegisterIsSource,
-    RegisterIsDestination,
-};
-
-const ModeBitmask = 0b1100000;
-
-const Mode = enum(u8) {
-    MemoryMode = 0b00,
-    MemoryMode8BitDisplacement = 0b01,
-    MemoryMode16Bit = 0b10,
-    RegisterMode = 0b11,
-};
-
-const RegBitmask = 0b00111000;
-const RMBitmask = 0b00000111;
-
-const Register = enum {
-    al,
-    ah,
-    ax,
-    bl,
-    bh,
-    bx,
-    cl,
-    ch,
-    cx,
-    dl,
-    dh,
-    dx,
-    sp,
-    bp,
-    si,
-    di,
-};
-
-const register_field_lookup: [8][2]Register = [_][2]Register{
-    [_]Register{ Register.al, Register.ax },
-    [_]Register{ Register.cl, Register.cx },
-    [_]Register{ Register.dl, Register.dx },
-    [_]Register{ Register.bl, Register.bx },
-    [_]Register{ Register.ah, Register.sp },
-    [_]Register{ Register.ch, Register.bp },
-    [_]Register{ Register.dh, Register.si },
-    [_]Register{ Register.bh, Register.di },
-};
-
-const InstructionBitFields = enum {
-    Direction,
-    WordOrByte,
-    Register_Mode,
-    Register_Operand,
-    Register_RM,
-};
-
-const Instruction = struct {
-    opcode: OpCodeType,
-    size: u8,
-    asm_text: []const u8,
-};
-
-pub fn buildInstructionLookup(alloc: std.mem.Allocator) !std.AutoHashMap(u8, Instruction) {
-    var instructions_lookup = std.AutoHashMap(u8, Instruction).init(alloc);
-
-    try instructions_lookup.put(0b10001001, Instruction{
-        .opcode = OpCodeType.mov,
+    try instructions_lookup.put(0b10001001, decode.Instruction{
+        .opcode = decode.OpCodeType.mov,
         .size = 2,
         .asm_text = "mov",
     });
@@ -114,7 +41,7 @@ pub fn printInstruction(instruction: []const u8, destination: [:0]const u8, sour
     try stdout.print("{s} {s}, {s}\n", .{ instruction, destination, source });
 }
 
-pub fn Disassemble(memory_buffer: []u8, memory_size: u64, instructions_lookup: std.AutoHashMap(u8, Instruction), stdout: anytype, stderr: anytype) !void {
+pub fn Disassemble(memory_buffer: []u8, memory_size: u64, instructions_lookup: std.AutoHashMap(u8, decode.Instruction), stdout: anytype, stderr: anytype) !void {
     var memory_buffer_index: u32 = 0;
 
     while (memory_buffer_index < memory_size) {
@@ -123,28 +50,17 @@ pub fn Disassemble(memory_buffer: []u8, memory_size: u64, instructions_lookup: s
 
         const instruction = instructions_lookup.get(opcode);
         if (instruction) |inst| {
-            const register_mode = byte2 & ModeBitmask >> 6;
+            const register_mode = byte2 & decode.ModeBitmask >> 6;
 
-            const direction_bit = opcode & DirectionBitBitmask >> 1;
-            const word_bit = opcode & WordByteBitBitmask;
+            const direction_bit = opcode & decode.DirectionBitBitmask >> 1;
+            const word_bit = opcode & decode.WordByteBitBitmask;
 
-            var source: Register = undefined;
-            var destination: Register = undefined;
+            const reg_bits = byte2 & decode.RegBitmask >> 3;
+            const rm_bits = byte2 & decode.RMBitmask;
 
-            if (register_mode == @intFromEnum(Mode.RegisterMode)) {
-                const reg_bits = byte2 & RegBitmask >> 3;
-                const rm_bits = byte2 & RMBitmask;
+            const operands = decode.getOperands(register_mode, direction_bit, word_bit, reg_bits, rm_bits);
 
-                if (direction_bit == @intFromEnum(DirectionBit.RegisterIsSource)) {
-                    source = register_field_lookup[word_bit][reg_bits];
-                    destination = register_field_lookup[word_bit][rm_bits];
-                } else {
-                    destination = register_field_lookup[word_bit][reg_bits];
-                    source = register_field_lookup[word_bit][rm_bits];
-                }
-            }
-
-            try printInstruction(inst.asm_text, @tagName(destination), @tagName(source), stdout);
+            try printInstruction(inst.asm_text, @tagName(operands.destination), @tagName(operands.source), stdout);
 
             if ((memory_buffer_index + inst.size) <= memory_size) {
                 memory_buffer_index += inst.size;
