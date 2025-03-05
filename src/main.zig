@@ -76,3 +76,7 @@ pub fn Disassemble(memory_buffer: []u8, memory_size: u64, instructions_lookup: s
         }
     }
 }
+
+test {
+    std.testing.refAllDecls(@This());
+}
