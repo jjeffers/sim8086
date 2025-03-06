@@ -70,8 +70,41 @@ fn compileAndCompareAssembly(listing: fs.Dir.Walker.Entry) !bool {
         };
 
         try std.testing.expectEqual(exec(&sim8086_nasm_argv, allocator, null), 0);
+
+        try assertfFileExists(sim8086_assembly);
+
+        try assertFilesMatchAllBytes(baseName, sim8086_assembly, allocator);
     }
     return true;
+}
+
+fn assertFilesMatchAllBytes(expected_filename: []const u8, actual_filename: []const u8, allocator: std.mem.Allocator) !void {
+    const expected = try std.fs.cwd().openFile(expected_filename, .{});
+    defer expected.close();
+
+    const actual = try std.fs.cwd().openFile(actual_filename, .{});
+    defer actual.close();
+
+    const expected_size = try expected.getEndPos();
+    const actual_size = try actual.getEndPos();
+
+    try std.testing.expectEqual(expected_size, actual_size);
+
+    const expected_buffer = try allocator.alloc(u8, expected_size);
+    defer allocator.free(expected_buffer);
+
+    const actual_buffer = try allocator.alloc(u8, actual_size);
+    defer allocator.free(actual_buffer);
+
+    _ = try expected.read(expected_buffer);
+    _ = try actual.read(actual_buffer);
+
+    for (expected_buffer, 0..) |byte1, i| {
+        if (byte1 != actual_buffer[i]) {
+            std.debug.print("expected byte # {} to be {b}, found {b}\n", .{ i, byte1, actual_buffer[i] });
+            return error.TestExpectedEqual;
+        }
+    }
 }
 
 pub fn assertfFileExists(filename: []u8) !void {
