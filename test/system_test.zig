@@ -40,11 +40,7 @@ fn compileAndCompareAssembly(listing: fs.Dir.Walker.Entry) !bool {
             listing.path,
         };
 
-        var nasm = Child.init(&nasm_argv, allocator);
-
-        try nasm.spawn();
-        const term = try nasm.wait();
-        try std.testing.expectEqual(term.Exited, 0);
+        try std.testing.expectEqual(exec(&nasm_argv, allocator, null), 0);
 
         const sim8086_disassembly = try std.fmt.allocPrint(allocator, "{s}.sim8086_asm", .{baseName});
         defer allocator.free(sim8086_disassembly);
@@ -57,26 +53,11 @@ fn compileAndCompareAssembly(listing: fs.Dir.Walker.Entry) !bool {
             baseName,
         };
 
-        var sim8086 = Child.init(&sim8086_argv, allocator);
-        sim8086.stdout_behavior = .Pipe;
-
-        try sim8086.spawn();
-        const stdout = sim8086.stdout.?.reader();
         const stdout_writer = decode_file.writer();
 
-        const max_output_size = 100 * 1024 * 1024;
-        const bytes = try stdout.readAllAlloc(allocator, max_output_size);
-        defer allocator.free(bytes);
+        try std.testing.expectEqual(exec(&sim8086_argv, allocator, stdout_writer), 0);
 
-        try stdout_writer.writeAll(bytes);
-
-        const sim8086_term = try sim8086.wait();
-
-        try std.testing.expectEqual(sim8086_term.Exited, 0);
-
-        const decode_stat = try std.fs.cwd().statFile(sim8086_disassembly);
-
-        try std.testing.expectEqual(decode_stat.kind, .file);
+        try assertfFileExists(sim8086_disassembly);
 
         const sim8086_assembly = try std.fmt.allocPrint(allocator, "{s}.sim8086", .{baseName});
         defer allocator.free(sim8086_assembly);
@@ -88,12 +69,38 @@ fn compileAndCompareAssembly(listing: fs.Dir.Walker.Entry) !bool {
             sim8086_disassembly,
         };
 
-        var sim8086_nasm = Child.init(&sim8086_nasm_argv, allocator);
-
-        try sim8086_nasm.spawn();
-        const sim8086_nasm_term = try sim8086_nasm.wait();
-
-        try std.testing.expectEqual(sim8086_nasm_term.Exited, 0);
+        try std.testing.expectEqual(exec(&sim8086_nasm_argv, allocator, null), 0);
     }
     return true;
+}
+
+pub fn assertfFileExists(filename: []u8) !void {
+    var found = true;
+    std.fs.cwd().access(filename, .{}) catch |e| switch (e) {
+        error.FileNotFound => found = false,
+        else => return e,
+    };
+    try std.testing.expect(found);
+}
+
+pub fn exec(argv: []const []const u8, allocator: std.mem.Allocator, stdout_writer: ?fs.File.Writer) !u8 {
+    var child = Child.init(argv, allocator);
+
+    if (stdout_writer) |_| {
+        child.stdout_behavior = .Pipe;
+    }
+
+    try child.spawn();
+
+    if (stdout_writer) |writer| {
+        const max_output_size = 100 * 1024 * 1024;
+        const stdout = child.stdout.?.reader();
+        const bytes = try stdout.readAllAlloc(allocator, max_output_size);
+        defer allocator.free(bytes);
+        try writer.writeAll(bytes);
+    }
+
+    const term = try child.wait();
+
+    return term.Exited;
 }
